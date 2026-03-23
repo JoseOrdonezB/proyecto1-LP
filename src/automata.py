@@ -367,20 +367,40 @@ def dfa_to_dot(dfa: DFA) -> str:
     return "\n".join(lines)
 
 def build_dfa_from_single_regex(regex: str):
-    """
-    Opcional: implementación de método directo
-    """
-    try:
-        from src.regex import preparar_regex
-        from src.afd_directo import construir_afd_directo
+    from src.regex import preparar_regex
+    from src.afd_directo import construir_afd_directo
 
-        regex_preparada, alfabeto = preparar_regex(regex)
-        afd = construir_afd_directo(regex_preparada, alfabeto)
+    regex_preparada, alfabeto = preparar_regex(regex)
+    afd = construir_afd_directo(regex_preparada, alfabeto)
 
-        return afd
+    # 🔥 CONVERTIR A FORMATO PROYECTO
 
-    except Exception as e:
-        raise RuntimeError(f"No se pudo usar AFD del laboratorio: {e}")
+    states = {}
+    
+    for i, estado in enumerate(afd["estados"]):
+        states[i] = DFAState(
+            id=i,
+            nfa_states=frozenset(estado),
+            transitions={},
+            accepting_token="TOKEN" if estado in afd["aceptacion"] else None,
+            accepting_action="TOKEN" if estado in afd["aceptacion"] else None,
+            priority=0
+        )
+
+    # mapear estados
+    estado_id_map = {estado: i for i, estado in enumerate(afd["estados"])}
+
+    # transiciones
+    for estado, trans in afd["transiciones"].items():
+        sid = estado_id_map[estado]
+        for simbolo, destino in trans.items():
+            states[sid].transitions[simbolo] = estado_id_map[destino]
+
+    return DFA(
+        states=states,
+        start_state=estado_id_map[afd["estado_inicial"]],
+        alphabet=set(alfabeto)
+    )
 
 
 def escape_label(value: str) -> str:

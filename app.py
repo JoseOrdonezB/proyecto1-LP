@@ -7,13 +7,15 @@ import pandas as pd
 import streamlit as st
 import graphviz  # noqa: F401
 
+from src.codegen import generate_lexer_code  
+
 from src.automata import (
     build_combined_nfa,
     dfa_to_dot,
     dfa_transition_table,
     minimize_dfa,
     nfa_to_dfa,
-    build_dfa_from_single_regex  # 👈 NUEVO
+    build_dfa_from_single_regex  
 )
 from src.parser_yalex import parse_yalex
 
@@ -21,13 +23,9 @@ st.set_page_config(page_title="Generador de Analizador Léxico", layout="wide")
 
 st.title("🔎 Generador de Analizador Léxico")
 st.caption(
-    "Procesa un archivo YALex, construye el AFN por Thompson o por método directo y lo convierte a AFD."
+    "Procesa un archivo YALex, construye el AFN por Thompson o método directo y genera un lexer."
 )
 
-
-# =========================
-# 🔧 Helpers
-# =========================
 
 def get_case_regex(case) -> str:
     for attr in ["regex", "pattern", "expr", "raw_regex", "regex_src", "source"]:
@@ -50,24 +48,18 @@ def get_case_action(case) -> str:
 def get_accepting_states(dfa):
     accepting = []
     for state_id, state in dfa.states.items():
-        token = getattr(state, "accepting_token", None)
-        action = getattr(state, "accepting_action", None)
-        if token is not None or action is not None:
+        if state.accepting_token is not None:
             accepting.append(state_id)
     return accepting
 
 
-# =========================
-# 📂 UI
-# =========================
 
 archivo = st.file_uploader("Sube un archivo .yal o .txt", type=["yal", "txt"])
 
 minimizar = st.checkbox("Minimizar AFD", value=True)
 
-# 🔥 NUEVO: modo laboratorio
 modo_lab = st.checkbox(
-    "Usar método directo para construir AFD (solo para pruebas con una regex)",
+    "Usar método directo (solo 1 regex)",
     value=False
 )
 
@@ -76,43 +68,34 @@ contenido = None
 if archivo is not None:
     contenido = archivo.read().decode("utf-8")
 
-    with st.expander("Ver contenido del archivo", expanded=False):
+    with st.expander("Ver contenido del archivo"):
         st.code(contenido, language="ocaml")
 
 
-# =========================
-# ⚙️ Procesamiento
-# =========================
 
-if st.button("⚙️ Generar base del analizador"):
+if st.button("⚙️ Generar analizador"):
 
     if contenido is None:
-        st.warning("Primero sube un archivo YALex.")
+        st.warning("Sube un archivo primero.")
         st.stop()
 
     try:
         parsed = parse_yalex(contenido)
 
         if not parsed.lets:
-            st.error("El archivo no contiene definiciones let.")
-            st.stop()
+            st.warning("No hay definiciones let (esto es válido).")
 
         if not parsed.rule_cases:
-            st.error("El archivo no contiene una sección rule válida.")
+            st.error("No hay reglas.")
             st.stop()
 
-        # =========================
-        # 🔥 CAMBIO PRINCIPAL
-        # =========================
 
         if modo_lab and len(parsed.rule_cases) == 1:
-            st.info("Modo laboratorio activado: usando AFD directo")
-
+            st.info("Modo AFD directo")
             regex = parsed.rule_cases[0].regex_src
             dfa = build_dfa_from_single_regex(regex)
-
         else:
-            st.info("Modo estándar: Thompson + subset construction")
+            st.info("Modo estándar: Thompson + subset")
 
             nfa = build_combined_nfa(parsed.rule_cases)
             dfa = nfa_to_dfa(nfa)
@@ -120,7 +103,9 @@ if st.button("⚙️ Generar base del analizador"):
             if minimizar:
                 dfa = minimize_dfa(dfa)
 
-        # =========================
+
+        codigo_lexer = generate_lexer_code(dfa)
+
 
         tabla = dfa_transition_table(dfa)
         dot_source = dfa_to_dot(dfa)
@@ -128,78 +113,45 @@ if st.button("⚙️ Generar base del analizador"):
         st.session_state["parsed"] = parsed
         st.session_state["dfa"] = dfa
         st.session_state["tabla"] = tabla
-        st.session_state["dot_source"] = dot_source
+        st.session_state["dot"] = dot_source
+        st.session_state["lexer_code"] = codigo_lexer
 
-        st.success("Archivo procesado correctamente.")
+        st.success("Analizador generado correctamente.")
 
     except Exception as e:
-        st.error(f"Ocurrió un error al procesar el archivo: {e}")
+        st.error(f"Error: {e}")
         st.code(traceback.format_exc())
 
 
-# =========================
-# 📊 RESULTADOS
-# =========================
 
 if "dfa" in st.session_state:
 
     parsed = st.session_state["parsed"]
     dfa = st.session_state["dfa"]
     tabla = st.session_state["tabla"]
-    dot_source = st.session_state["dot_source"]
+    dot = st.session_state["dot"]
+    lexer_code = st.session_state["lexer_code"]
 
     accepting_states = get_accepting_states(dfa)
 
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(
-        ["Resumen", "Definiciones y reglas", "Tabla AFD", "Grafo", "DOT"]
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
+        ["Resumen", "Reglas", "Tabla AFD", "Grafo", "DOT", "Lexer generado"]
     )
 
-    # =========================
-    # 🧠 TAB 1
-    # =========================
 
     with tab1:
-        st.subheader("Resumen del archivo")
+        st.subheader("Resumen")
 
         c1, c2, c3 = st.columns(3)
-        c1.metric("Definiciones let", len(parsed.lets))
-        c2.metric("Casos en rule", len(parsed.rule_cases))
-        c3.metric("Estados AFD", len(dfa.states))
+        c1.metric("lets", len(parsed.lets))
+        c2.metric("reglas", len(parsed.rule_cases))
+        c3.metric("estados", len(dfa.states))
 
-        st.markdown("### Regla principal")
-        st.write(f"**Nombre:** {parsed.rule_name}")
-        st.write(
-            f"**Args:** {', '.join(parsed.rule_args) if parsed.rule_args else 'Sin argumentos'}"
-        )
+        st.write("Estados de aceptación:", accepting_states)
 
-        st.markdown("### Estados de aceptación")
-        st.write(accepting_states if accepting_states else ["Ninguno"])
-
-        st.markdown("### Alfabeto")
-        st.write(sorted([repr(symbol) for symbol in dfa.alphabet]))
-
-        if parsed.header.strip():
-            st.markdown("### Header")
-            st.code(parsed.header)
-
-        if parsed.trailer.strip():
-            st.markdown("### Trailer")
-            st.code(parsed.trailer)
-
-    # =========================
-    # 📄 TAB 2
-    # =========================
 
     with tab2:
-        st.subheader("Definiciones")
-
-        defs_data = [
-            {"Nombre": nombre, "Expresión": expr}
-            for nombre, expr in parsed.lets.items()
-        ]
-        st.dataframe(pd.DataFrame(defs_data), use_container_width=True)
-
-        st.subheader("Casos de la regla")
+        st.subheader("Reglas")
 
         reglas_data = []
         for i, case in enumerate(parsed.rule_cases, start=1):
@@ -213,47 +165,28 @@ if "dfa" in st.session_state:
 
         st.dataframe(pd.DataFrame(reglas_data), use_container_width=True)
 
-    # =========================
-    # 📊 TAB 3
-    # =========================
-
     with tab3:
-        st.subheader("Tabla de transiciones del AFD")
-
+        st.subheader("Tabla AFD")
         st.dataframe(pd.DataFrame(tabla), use_container_width=True)
 
-        transitions_json = {}
-        for state_id, state in dfa.states.items():
-            for symbol, target in state.transitions.items():
-                transitions_json[f"{state_id}::{symbol}"] = target
-
-        afd_json = {
-            "states": [str(state_id) for state_id in dfa.states.keys()],
-            "alphabet": [str(symbol) for symbol in sorted(dfa.alphabet)],
-            "transitions": transitions_json,
-            "start_state": str(dfa.start_state),
-            "accept_states": [str(state_id) for state_id in accepting_states],
-        }
-
-        st.download_button(
-            label="⬇️ Descargar AFD en JSON",
-            data=json.dumps(afd_json, indent=2, ensure_ascii=False),
-            file_name="afd.json",
-            mime="application/json",
-        )
-
-    # =========================
-    # 🔗 TAB 4
-    # =========================
 
     with tab4:
-        st.subheader("Grafo del AFD")
-        st.graphviz_chart(dot_source, use_container_width=True)
+        st.subheader("Grafo")
+        st.graphviz_chart(dot, use_container_width=True)
 
-    # =========================
-    # 🧾 TAB 5
-    # =========================
 
     with tab5:
-        st.subheader("Código DOT")
-        st.code(dot_source, language="dot")
+        st.subheader("DOT")
+        st.code(dot, language="dot")
+
+
+    with tab6:
+        st.subheader("Código del lexer generado")
+
+        st.code(lexer_code, language="python")
+
+        st.download_button(
+            "⬇️ Descargar lexer.py",
+            data=lexer_code,
+            file_name="lexer.py"
+        )
