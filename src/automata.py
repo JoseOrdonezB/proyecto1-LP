@@ -367,41 +367,21 @@ def dfa_to_dot(dfa: DFA) -> str:
     return "\n".join(lines)
 
 def build_dfa_from_single_regex(regex: str):
-    from src.regex import preparar_regex
-    from src.afd_directo import construir_afd_directo
+    from src.parser_yalex import RegexParser, RuleCase
 
-    regex_preparada, alfabeto = preparar_regex(regex)
-    afd = construir_afd_directo(regex_preparada, alfabeto)
-
-    # 🔥 CONVERTIR A FORMATO PROYECTO
-
-    states = {}
-    
-    for i, estado in enumerate(afd["estados"]):
-        states[i] = DFAState(
-            id=i,
-            nfa_states=frozenset(estado),
-            transitions={},
-            accepting_token="TOKEN" if estado in afd["aceptacion"] else None,
-            accepting_action="TOKEN" if estado in afd["aceptacion"] else None,
-            priority=0
-        )
-
-    # mapear estados
-    estado_id_map = {estado: i for i, estado in enumerate(afd["estados"])}
-
-    # transiciones
-    for estado, trans in afd["transiciones"].items():
-        sid = estado_id_map[estado]
-        for simbolo, destino in trans.items():
-            states[sid].transitions[simbolo] = estado_id_map[destino]
-
-    return DFA(
-        states=states,
-        start_state=estado_id_map[afd["estado_inicial"]],
-        alphabet=set(alfabeto)
+    case = RuleCase(
+        regex_src=regex,
+        ast=RegexParser(regex).parse(),
+        action_src="TOKEN"
     )
 
+    nfa = build_combined_nfa([case])
+
+    dfa = nfa_to_dfa(nfa)
+
+    dfa_min = minimize_dfa(dfa)
+
+    return dfa_min
 
 def escape_label(value: str) -> str:
     if value == "\n":
