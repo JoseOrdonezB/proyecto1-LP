@@ -19,7 +19,9 @@ def regex_a_postfijo(regex):
     precedencia = {
         '|': 1,
         '.': 2,
-        '*': 3
+        '*': 3,
+        '+': 3,
+        '?': 3
     }
 
     salida = []
@@ -27,7 +29,7 @@ def regex_a_postfijo(regex):
 
     for c in regex:
 
-        if es_simbolo(c):
+        if es_simbolo(c) or c == 'ε' or c == '#':
             salida.append(c)
 
         elif c == '(':
@@ -36,19 +38,21 @@ def regex_a_postfijo(regex):
         elif c == ')':
             while pila and pila[-1] != '(':
                 salida.append(pila.pop())
-            if pila:
-                pila.pop()
+            if not pila:
+                raise ValueError("Paréntesis desbalanceados")
+            pila.pop()
 
         else:
-            while pila and pila[-1] != '(' and precedencia.get(pila[-1],0) >= precedencia.get(c,0):
+            while pila and pila[-1] != '(' and precedencia.get(pila[-1], 0) >= precedencia.get(c, 0):
                 salida.append(pila.pop())
             pila.append(c)
 
     while pila:
+        if pila[-1] == '(':
+            raise ValueError("Paréntesis desbalanceados")
         salida.append(pila.pop())
 
     return ''.join(salida)
-
 
 def construir_arbol(postfijo):
 
@@ -61,30 +65,31 @@ def construir_arbol(postfijo):
         if c == 'ε':
             nodo = Nodo(c)
             nodo.nullable = True
-            nodo.firstpos = set()
-            nodo.lastpos = set()
             pila.append(nodo)
 
-        elif es_simbolo(c):
-
+        elif es_simbolo(c) or c == '#':
             nodo = Nodo(c, posicion=pos)
             pila.append(nodo)
             simbolo_por_pos[pos] = c
             pos += 1
 
-        elif c == '*':
-
+        elif c in ['*', '+', '?']:
+            if not pila:
+                raise ValueError("Error en regex: operador sin operando")
             hijo = pila.pop()
-            pila.append(Nodo('*', hijo))
+            pila.append(Nodo(c, hijo))
 
         elif c in ['.', '|']:
-
+            if len(pila) < 2:
+                raise ValueError("Error en regex: falta operando")
             der = pila.pop()
             izq = pila.pop()
             pila.append(Nodo(c, izq, der))
 
-    return pila.pop(), simbolo_por_pos
+    if len(pila) != 1:
+        raise ValueError("Regex inválida")
 
+    return pila.pop(), simbolo_por_pos
 
 def calcular_propiedades(nodo, followpos):
 
@@ -133,22 +138,43 @@ def calcular_propiedades(nodo, followpos):
         for i in nodo.lastpos:
             followpos[i].update(nodo.firstpos)
 
+    elif nodo.valor == '+':
+
+        nodo.nullable = nodo.izquierdo.nullable
+        nodo.firstpos = nodo.izquierdo.firstpos
+        nodo.lastpos = nodo.izquierdo.lastpos
+
+        for i in nodo.lastpos:
+            followpos[i].update(nodo.firstpos)
+
+    elif nodo.valor == '?':
+        nodo.nullable = True
+        nodo.firstpos = nodo.izquierdo.firstpos
+        nodo.lastpos = nodo.izquierdo.lastpos
+
 
 def construir_afd_directo(regex, alfabeto):
+
+    # 🔥 AGREGAR # AUTOMÁTICAMENTE
+    regex = f"({regex}).#"
 
     postfijo = regex_a_postfijo(regex)
 
     raiz, simbolo_pos = construir_arbol(postfijo)
 
-    followpos = {i:set() for i in simbolo_pos}
+    followpos = {i: set() for i in simbolo_pos}
 
     calcular_propiedades(raiz, followpos)
 
+    # 🔥 encontrar posición de #
     pos_final = None
-    for p,s in simbolo_pos.items():
+    for p, s in simbolo_pos.items():
         if s == '#':
             pos_final = p
             break
+
+    if pos_final is None:
+        raise ValueError("No se encontró símbolo de fin '#'")
 
     estado_inicial = frozenset(raiz.firstpos)
 
@@ -175,7 +201,6 @@ def construir_afd_directo(regex, alfabeto):
                     u.update(followpos[p])
 
             if u:
-
                 u = frozenset(u)
                 transiciones[estado][simbolo] = u
 
@@ -183,10 +208,9 @@ def construir_afd_directo(regex, alfabeto):
                     estados.append(u)
                     cola.append(u)
 
-    nombres = {estado:f"S{i}" for i,estado in enumerate(estados)}
+    nombres = {estado: f"S{i}" for i, estado in enumerate(estados)}
 
     return {
-
         "postfijo": postfijo,
         "followpos": followpos,
         "simbolo_pos": simbolo_pos,
