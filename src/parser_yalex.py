@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Set, Tuple
-
+import copy
 
 # ============================================================
 # AST de expresiones regulares
@@ -122,11 +122,11 @@ def strip_comments(text: str) -> str:
     i = 0
     depth = 0
     while i < len(text):
-        if i + 1 < len(text) and text[i : i + 2] == "(*":
+        if i + 1 < len(text) and text[i:i+2] == "(*":
             depth += 1
             i += 2
             continue
-        if depth > 0 and i + 1 < len(text) and text[i : i + 2] == "*)":
+        if depth > 0 and i + 1 < len(text) and text[i:i+2] == "*)":
             depth -= 1
             i += 2
             continue
@@ -158,27 +158,13 @@ class RegexParser:
         node = self.parse_union()
         self.i = self.skip_local_ws(self.i)
         if self.i != len(self.text):
-            raise YALexError(
-                f"No se pudo parsear la regex completa. Sobra: {self.text[self.i:]}"
-            )
+            raise YALexError(f"Sobra texto en regex: {self.text[self.i:]}")
         return node
 
     def skip_local_ws(self, i: int) -> int:
         while i < len(self.text) and self.text[i].isspace():
             i += 1
         return i
-
-    def current(self) -> Optional[str]:
-        self.i = self.skip_local_ws(self.i)
-        if self.i >= len(self.text):
-            return None
-        return self.text[self.i]
-
-    def consume(self, expected: str) -> None:
-        self.i = self.skip_local_ws(self.i)
-        if self.i >= len(self.text) or self.text[self.i] != expected:
-            raise YALexError(f"Se esperaba '{expected}' en regex: {self.text}")
-        self.i += 1
 
     def parse_union(self) -> RegexNode:
         node = self.parse_concat()
@@ -196,14 +182,12 @@ class RegexParser:
         parts: List[RegexNode] = []
         while True:
             self.i = self.skip_local_ws(self.i)
-            if self.i >= len(self.text):
-                break
-            if self.text[self.i] in ")|":
+            if self.i >= len(self.text) or self.text[self.i] in ")|":
                 break
             parts.append(self.parse_postfix())
 
         if not parts:
-            return EmptyNode()
+            raise YALexError("Concatenación vacía inválida")
 
         node = parts[0]
         for nxt in parts[1:]:
@@ -233,21 +217,26 @@ class RegexParser:
     def parse_primary(self) -> RegexNode:
         self.i = self.skip_local_ws(self.i)
         if self.i >= len(self.text):
-            return EmptyNode()
+            raise YALexError("Expresión inesperadamente vacía")
 
         ch = self.text[self.i]
 
         if ch == "(":
             self.i += 1
             node = self.parse_union()
-            self.consume(")")
+            if self.i >= len(self.text) or self.text[self.i] != ")":
+                raise YALexError("Falta ')'")
+            self.i += 1
             return node
 
         if ch == "_":
             self.i += 1
-            return CharSetNode(set(ASCII_UNIVERSE))
+            return CharSetNode(set(ASCII_UNIVERSE) - {"\n"})
 
-        if self.text.startswith("eof", self.i):
+        # FIX EOF seguro
+        if self.text.startswith("eof", self.i) and (
+            self.i + 3 == len(self.text) or not self.text[self.i + 3].isalnum()
+        ):
             self.i += 3
             return LiteralNode("<<EOF>>")
 
@@ -263,10 +252,10 @@ class RegexParser:
         if ch.isalpha() or ch == "_":
             ident = self.read_identifier()
             if ident not in self.definitions:
-                raise YALexError(f"Identificador regex no definido: {ident}")
-            return self.definitions[ident]
+                raise YALexError(f"Identificador no definido: {ident}")
+            return copy.deepcopy(self.definitions[ident])  # FIX CRÍTICO
 
-        raise YALexError(f"Símbolo no soportado en regex: {ch}")
+        raise YALexError(f"Símbolo inválido: {ch}")
 
     def read_identifier(self) -> str:
         start = self.i
@@ -277,10 +266,8 @@ class RegexParser:
         return self.text[start:self.i]
 
     def read_single_quoted(self) -> str:
-        if self.text[self.i] != "'":
-            raise YALexError("Se esperaba comilla simple.")
         self.i += 1
-        value: List[str] = []
+        value = []
         while self.i < len(self.text):
             ch = self.text[self.i]
             if ch == "\\" and self.i + 1 < len(self.text):
@@ -291,17 +278,15 @@ class RegexParser:
                 self.i += 1
                 decoded = decode_escaped("".join(value))
                 if len(decoded) != 1:
-                    raise YALexError("Un literal con comillas simples debe contener un carácter.")
+                    raise YALexError("Literal inválido")
                 return decoded
             value.append(ch)
             self.i += 1
-        raise YALexError("Literal con comillas simples sin cerrar.")
+        raise YALexError("Literal sin cerrar")
 
     def read_double_quoted(self) -> str:
-        if self.text[self.i] != '"':
-            raise YALexError('Se esperaba comilla doble.')
         self.i += 1
-        value: List[str] = []
+        value = []
         while self.i < len(self.text):
             ch = self.text[self.i]
             if ch == "\\" and self.i + 1 < len(self.text):
@@ -313,11 +298,9 @@ class RegexParser:
                 return decode_escaped("".join(value))
             value.append(ch)
             self.i += 1
-        raise YALexError("Cadena con comillas dobles sin cerrar.")
+        raise YALexError("String sin cerrar")
 
     def string_to_concat(self, text: str) -> RegexNode:
-        if text == "":
-            return EmptyNode()
         nodes = [LiteralNode(ch) for ch in text]
         node = nodes[0]
         for nxt in nodes[1:]:
@@ -330,49 +313,55 @@ class RegexParser:
         if self.i < len(self.text) and self.text[self.i] == "#":
             self.i += 1
             right = self.parse_charset()
-            return CharSetNode(left.chars - right.chars)
+            result = left.chars - right.chars
+
+            if not result:
+                raise YALexError("Charset vacío después de diferencia (#)")
+
+            return CharSetNode(result)
         return left
 
     def parse_charset(self) -> CharSetNode:
-        self.i = self.skip_local_ws(self.i)
-        if self.i >= len(self.text) or self.text[self.i] != "[":
-            raise YALexError("Se esperaba '[' para character-set.")
         self.i += 1
-        negate = False
-        if self.i < len(self.text) and self.text[self.i] == "^":
-            negate = True
-            self.i += 1
-
         chars: Set[str] = set()
+
         while self.i < len(self.text):
             self.i = self.skip_local_ws(self.i)
+
             if self.i < len(self.text) and self.text[self.i] == "]":
                 self.i += 1
-                return CharSetNode((set(ASCII_UNIVERSE) - chars) if negate else chars)
+                if not chars:
+                    raise YALexError("Charset vacío")
+                return CharSetNode(chars)
 
             left_chars = self.read_charset_atom()
             self.i = self.skip_local_ws(self.i)
 
-            if len(left_chars) == 1 and self.i < len(self.text) and self.text[self.i] == "-":
-                lookahead = self.i + 1
-                while lookahead < len(self.text) and self.text[lookahead].isspace():
-                    lookahead += 1
-                if lookahead < len(self.text) and self.text[lookahead] != "]":
-                    self.i += 1
-                    self.i = self.skip_local_ws(self.i)
-                    right_chars = self.read_charset_atom()
-                    if len(right_chars) != 1:
-                        raise YALexError("Un rango debe ser entre dos caracteres individuales.")
-                    start = ord(next(iter(left_chars)))
-                    end = ord(next(iter(right_chars)))
-                    if start > end:
-                        start, end = end, start
-                    chars.update(chr(c) for c in range(start, end + 1))
-                    continue
+            # RANGO
+            if (
+                len(left_chars) == 1 and
+                self.i < len(self.text) and
+                self.text[self.i] == "-"
+            ):
+                self.i += 1
+                self.i = self.skip_local_ws(self.i)
 
-            chars.update(left_chars)
+                right_chars = self.read_charset_atom()
 
-        raise YALexError("Character-set sin cerrar con ']'.")
+                if len(right_chars) != 1:
+                    raise YALexError("Rango inválido en charset")
+
+                start = ord(next(iter(left_chars)))
+                end = ord(next(iter(right_chars)))
+
+                if start > end:
+                    start, end = end, start
+
+                chars.update(chr(c) for c in range(start, end + 1))
+            else:
+                chars.update(left_chars)
+
+        raise YALexError("Charset sin cerrar")
 
     def read_charset_atom(self) -> Set[str]:
         if self.i >= len(self.text):
@@ -457,8 +446,13 @@ def parse_rule_cases(rule_body: str) -> List[RuleCase]:
 
         regex_src = rule_body[regex_start:brace_idx].strip()
         action_src, i = extract_braced_block(rule_body, brace_idx)
-        if regex_src:
-            cases.append(RuleCase(regex_src=regex_src, action_src=action_src.strip()))
+        if not regex_src:
+            raise YALexError("Regex vacía en regla")
+
+        cases.append(RuleCase(
+            regex_src=regex_src,
+            action_src=action_src.strip()
+        ))
 
     if not cases:
         raise YALexError("No se encontraron reglas dentro de 'rule'.")
