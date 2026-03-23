@@ -1,0 +1,26 @@
+(* Ejemplo intermedio YALex *)
+
+let delimitador = [' ''\t''\n']
+let espacio = delimitador+
+
+let digito = ['0'-'9']
+let numero = digito+('.'digito+)?
+
+let letra = ['a'-'z''A'-'Z']
+let id = letra(letra|digito)*
+
+let igual = '='
+let suma = '+'
+let resta = '-'
+let mult = '*'
+let div = '/'
+
+rule tokens =
+    espacio         { }
+  | id              { print("ID\n") }
+  | numero          { print("NUMERO\n") }
+  | igual           { print("IGUAL\n") }
+  | suma            { print("SUMA\n") }
+  | resta           { print("RESTA\n") }
+  | mult            { print("MULT\n") }
+  | div             { print("DIV\n") }
