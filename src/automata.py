@@ -366,6 +366,21 @@ def dfa_to_dot(dfa: DFA) -> str:
     lines.append("}")
     return "\n".join(lines)
 
+def build_dfa_from_single_regex(regex: str):
+    """
+    Opcional: implementación de método directo
+    """
+    try:
+        from src.regex import preparar_regex
+        from src.afd_directo import construir_afd_directo
+
+        regex_preparada, alfabeto = preparar_regex(regex)
+        afd = construir_afd_directo(regex_preparada, alfabeto)
+
+        return afd
+
+    except Exception as e:
+        raise RuntimeError(f"No se pudo usar AFD del laboratorio: {e}")
 
 
 def escape_label(value: str) -> str:

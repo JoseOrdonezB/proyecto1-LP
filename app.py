@@ -13,6 +13,7 @@ from src.automata import (
     dfa_transition_table,
     minimize_dfa,
     nfa_to_dfa,
+    build_dfa_from_single_regex  # 👈 NUEVO
 )
 from src.parser_yalex import parse_yalex
 
@@ -20,9 +21,13 @@ st.set_page_config(page_title="Generador de Analizador Léxico", layout="wide")
 
 st.title("🔎 Generador de Analizador Léxico")
 st.caption(
-    "Procesa un archivo YALex, construye el AFN por Thompson y lo convierte a AFD."
+    "Procesa un archivo YALex, construye el AFN por Thompson o por método directo y lo convierte a AFD."
 )
 
+
+# =========================
+# 🔧 Helpers
+# =========================
 
 def get_case_regex(case) -> str:
     for attr in ["regex", "pattern", "expr", "raw_regex", "regex_src", "source"]:
@@ -52,16 +57,35 @@ def get_accepting_states(dfa):
     return accepting
 
 
+# =========================
+# 📂 UI
+# =========================
+
 archivo = st.file_uploader("Sube un archivo .yal o .txt", type=["yal", "txt"])
+
 minimizar = st.checkbox("Minimizar AFD", value=True)
 
+# 🔥 NUEVO: modo laboratorio
+modo_lab = st.checkbox(
+    "Usar método directo para construir AFD (solo para pruebas con una regex)",
+    value=False
+)
+
 contenido = None
+
 if archivo is not None:
     contenido = archivo.read().decode("utf-8")
+
     with st.expander("Ver contenido del archivo", expanded=False):
         st.code(contenido, language="ocaml")
 
+
+# =========================
+# ⚙️ Procesamiento
+# =========================
+
 if st.button("⚙️ Generar base del analizador"):
+
     if contenido is None:
         st.warning("Primero sube un archivo YALex.")
         st.stop()
@@ -77,11 +101,26 @@ if st.button("⚙️ Generar base del analizador"):
             st.error("El archivo no contiene una sección rule válida.")
             st.stop()
 
-        nfa = build_combined_nfa(parsed.rule_cases)
-        dfa = nfa_to_dfa(nfa)
+        # =========================
+        # 🔥 CAMBIO PRINCIPAL
+        # =========================
 
-        if minimizar:
-            dfa = minimize_dfa(dfa)
+        if modo_lab and len(parsed.rule_cases) == 1:
+            st.info("Modo laboratorio activado: usando AFD directo")
+
+            regex = parsed.rule_cases[0].regex_src
+            dfa = build_dfa_from_single_regex(regex)
+
+        else:
+            st.info("Modo estándar: Thompson + subset construction")
+
+            nfa = build_combined_nfa(parsed.rule_cases)
+            dfa = nfa_to_dfa(nfa)
+
+            if minimizar:
+                dfa = minimize_dfa(dfa)
+
+        # =========================
 
         tabla = dfa_transition_table(dfa)
         dot_source = dfa_to_dot(dfa)
@@ -97,7 +136,13 @@ if st.button("⚙️ Generar base del analizador"):
         st.error(f"Ocurrió un error al procesar el archivo: {e}")
         st.code(traceback.format_exc())
 
+
+# =========================
+# 📊 RESULTADOS
+# =========================
+
 if "dfa" in st.session_state:
+
     parsed = st.session_state["parsed"]
     dfa = st.session_state["dfa"]
     tabla = st.session_state["tabla"]
@@ -109,8 +154,13 @@ if "dfa" in st.session_state:
         ["Resumen", "Definiciones y reglas", "Tabla AFD", "Grafo", "DOT"]
     )
 
+    # =========================
+    # 🧠 TAB 1
+    # =========================
+
     with tab1:
         st.subheader("Resumen del archivo")
+
         c1, c2, c3 = st.columns(3)
         c1.metric("Definiciones let", len(parsed.lets))
         c2.metric("Casos en rule", len(parsed.rule_cases))
@@ -136,8 +186,13 @@ if "dfa" in st.session_state:
             st.markdown("### Trailer")
             st.code(parsed.trailer)
 
+    # =========================
+    # 📄 TAB 2
+    # =========================
+
     with tab2:
         st.subheader("Definiciones")
+
         defs_data = [
             {"Nombre": nombre, "Expresión": expr}
             for nombre, expr in parsed.lets.items()
@@ -145,6 +200,7 @@ if "dfa" in st.session_state:
         st.dataframe(pd.DataFrame(defs_data), use_container_width=True)
 
         st.subheader("Casos de la regla")
+
         reglas_data = []
         for i, case in enumerate(parsed.rule_cases, start=1):
             reglas_data.append(
@@ -154,25 +210,17 @@ if "dfa" in st.session_state:
                     "Acción": get_case_action(case),
                 }
             )
+
         st.dataframe(pd.DataFrame(reglas_data), use_container_width=True)
 
-        with st.expander("Ver atributos reales de un RuleCase", expanded=False):
-            if parsed.rule_cases:
-                sample_case = parsed.rule_cases[0]
-                attrs = {
-                    attr: str(getattr(sample_case, attr))
-                    for attr in dir(sample_case)
-                    if not attr.startswith("_") and not callable(getattr(sample_case, attr))
-                }
-                st.json(attrs)
+    # =========================
+    # 📊 TAB 3
+    # =========================
 
     with tab3:
         st.subheader("Tabla de transiciones del AFD")
 
-        if isinstance(tabla, pd.DataFrame):
-            st.dataframe(tabla, use_container_width=True)
-        else:
-            st.dataframe(pd.DataFrame(tabla), use_container_width=True)
+        st.dataframe(pd.DataFrame(tabla), use_container_width=True)
 
         transitions_json = {}
         for state_id, state in dfa.states.items():
@@ -194,9 +242,17 @@ if "dfa" in st.session_state:
             mime="application/json",
         )
 
+    # =========================
+    # 🔗 TAB 4
+    # =========================
+
     with tab4:
         st.subheader("Grafo del AFD")
         st.graphviz_chart(dot_source, use_container_width=True)
+
+    # =========================
+    # 🧾 TAB 5
+    # =========================
 
     with tab5:
         st.subheader("Código DOT")
