@@ -8,3 +8,4 @@ rule tokens =
   | digit+          { return NUMBER }
   | '='             { return IGUAL }
   | '+'             { return SUMA }
+  | '-'             { return RESTA }

@@ -1,0 +1,27 @@
+let digit = ['0'-'9']
+let letter = ['a'-'z''A'-'Z']
+let id = letter(letter|digit)*
+let ws = [' ''\t''\n']+
+
+rule tokens =
+    ws              { return WHITESPACE }
+
+  | "if"            { return IF }
+  | "else"          { return ELSE }
+  | "while"         { return WHILE }
+  | "print"         { return PRINT }
+
+  | id              { return ID }
+  | digit+          { return NUMBER }
+
+  | "=="            { return IGUAL_IGUAL }
+  | "!="            { return DIFERENTE }
+  | "="             { return IGUAL }
+
+  | "+"             { return SUMA }
+  | "-"             { return RESTA }
+  | "*"             { return MULT }
+  | "/"             { return DIV }
+
+  | "("             { return LPAREN }
+  | ")"             { return RPAREN }

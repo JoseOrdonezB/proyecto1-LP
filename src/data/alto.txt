@@ -1,0 +1,12 @@
+def factorial(n):
+    if n <= 1:
+        return 1
+    else:
+        return n * factorial(n - 1)
+
+for i in range(1, 6):
+    print("Factorial de", i, "=", factorial(i))
+
+# prueba de strings con escapes
+mensaje = "Hola\nMundo\t!"
+print(mensaje)
