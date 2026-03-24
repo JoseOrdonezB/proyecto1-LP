@@ -335,17 +335,36 @@ def dfa_transition_table(dfa: DFA) -> List[Dict[str, str]]:
         rows.append(row)
     return rows
 
+def escape_label(value: str) -> str:
+    if value is None:
+        return ""
+    return (
+        str(value)
+        .replace("\\", "\\\\")
+        .replace('"', '\\"')
+        .replace("{", "\\{")
+        .replace("}", "\\}")
+        .replace("<", "\\<")
+        .replace(">", "\\>")
+        .replace("|", "\\|")
+        .replace("\n", "\\n")
+        .replace("\t", "\\t")
+        .replace("=", "\\=")
+        .replace(";", "\\;")
+    )
 
+def dfa_to_dot(dfa) -> str:
+    from collections import defaultdict
 
-def dfa_to_dot(dfa: DFA) -> str:
     lines = [
         "digraph DFA {",
         "  rankdir=LR;",
-        '  node [shape=circle];',
+        "  node [shape=circle];",
         '  start [shape=point];',
         f"  start -> q{dfa.start_state};",
     ]
 
+    # Nodos
     for sid, state in sorted(dfa.states.items()):
         if state.accepting_token:
             label = f"q{sid}\\n{escape_label(state.accepting_token)}"
@@ -353,13 +372,16 @@ def dfa_to_dot(dfa: DFA) -> str:
         else:
             lines.append(f'  q{sid} [label="q{sid}"];')
 
+    # Aristas
     for sid, state in sorted(dfa.states.items()):
-        grouped: Dict[int, List[str]] = defaultdict(list)
-        for sym, target in sorted(state.transitions.items(), key=lambda item: (item[1], item[0])):
+        grouped = defaultdict(list)
+        for sym, target in state.transitions.items():
             grouped[target].append(sym)
+
         for target, symbols in grouped.items():
-            label = ", ".join(escape_label(sym) for sym in symbols[:8])
-            if len(symbols) > 8:
+            display_symbols = symbols[:10]
+            label = ", ".join(escape_label(sym) for sym in display_symbols)
+            if len(symbols) > 10:
                 label += ", ..."
             lines.append(f'  q{sid} -> q{target} [label="{label}"];')
 
