@@ -404,10 +404,3 @@ def build_dfa_from_single_regex(regex: str):
     dfa_min = minimize_dfa(dfa)
 
     return dfa_min
-
-def escape_label(value: str) -> str:
-    if value == "\n":
-        return r"\\n"
-    if value == "\t":
-        return r"\\t"
-    return value.replace('"', r'\"')
