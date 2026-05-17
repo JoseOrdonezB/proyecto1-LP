@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass, field
-from typing import Dict, FrozenSet, List, Set, Tuple
+from typing import Dict, FrozenSet, Set, Tuple, List
 
 from src.syntax.parser_yapar import Grammar, Production
 
+
+EOF_SYMBOL = "$"
 
 @dataclass(frozen=True)
 class LR0Item:
@@ -37,6 +39,7 @@ class LR0State:
 
     def __str__(self) -> str:
         lines = [f"I{self.id}:"]
+
         for item in sorted(self.items, key=str):
             lines.append(f"  {item}")
 
@@ -47,13 +50,18 @@ class LR0State:
 
         return "\n".join(lines)
 
-
 @dataclass
 class LR0Automaton:
     states: Dict[int, LR0State]
     start_state: int
     transitions: Dict[Tuple[int, str], int]
+    grammar: Grammar
 
+@dataclass
+class ParsingTable:
+    action: Dict[Tuple[int, str], str]
+    goto: Dict[Tuple[int, str], int]
+    conflicts: List[str] = field(default_factory=list)
 
 def closure(items: Set[LR0Item], grammar: Grammar) -> FrozenSet[LR0Item]:
     result = set(items)
@@ -79,7 +87,6 @@ def closure(items: Set[LR0Item], grammar: Grammar) -> FrozenSet[LR0Item]:
 
     return frozenset(result)
 
-
 def goto(items: FrozenSet[LR0Item], symbol: str, grammar: Grammar) -> FrozenSet[LR0Item]:
     moved_items: Set[LR0Item] = set()
 
@@ -91,7 +98,6 @@ def goto(items: FrozenSet[LR0Item], symbol: str, grammar: Grammar) -> FrozenSet[
         return frozenset()
 
     return closure(moved_items, grammar)
-
 
 def build_lr0_automaton(grammar: Grammar) -> LR0Automaton:
     augmented_grammar = grammar.augmented()
@@ -136,11 +142,79 @@ def build_lr0_automaton(grammar: Grammar) -> LR0Automaton:
     return LR0Automaton(
         states=states,
         start_state=0,
-        transitions=transitions
+        transitions=transitions,
+        grammar=augmented_grammar
     )
 
+def set_action(
+    table: ParsingTable,
+    state_id: int,
+    terminal: str,
+    value: str
+) -> None:
+    key = (state_id, terminal)
+
+    if key in table.action and table.action[key] != value:
+        table.conflicts.append(
+            f"Conflicto ACTION[{state_id}, {terminal}]: "
+            f"{table.action[key]} vs {value}"
+        )
+        return
+
+    table.action[key] = value
+
+def build_parsing_table(automaton: LR0Automaton) -> ParsingTable:
+    grammar = automaton.grammar
+
+    table = ParsingTable(
+        action={},
+        goto={},
+        conflicts=[]
+    )
+
+    terminals = set(grammar.terminals)
+    terminals.add(EOF_SYMBOL)
+
+    for state_id, state in automaton.states.items():
+
+        for symbol, target_state in state.transitions.items():
+            if symbol in grammar.terminals:
+                set_action(table, state_id, symbol, f"s{target_state}")
+
+            elif symbol in grammar.nonterminals:
+                table.goto[(state_id, symbol)] = target_state
+
+        for item in state.items:
+            if not item.is_complete():
+                continue
+
+            production = item.production
+
+            if production.left == grammar.start_symbol:
+                set_action(table, state_id, EOF_SYMBOL, "acc")
+            else:
+                reduce_value = f"r({production.left} -> {' '.join(production.right)})"
+
+                for terminal in terminals:
+                    set_action(table, state_id, terminal, reduce_value)
+
+    return table
 
 def print_lr0_automaton(automaton: LR0Automaton) -> None:
     for state_id in sorted(automaton.states):
         print(automaton.states[state_id])
         print()
+
+def print_parsing_table(table: ParsingTable) -> None:
+    print("ACTION:")
+    for (state, terminal), action in sorted(table.action.items()):
+        print(f"  ACTION[{state}, {terminal}] = {action}")
+
+    print("\nGOTO:")
+    for (state, nonterminal), target in sorted(table.goto.items()):
+        print(f"  GOTO[{state}, {nonterminal}] = {target}")
+
+    if table.conflicts:
+        print("\nCONFLICTOS:")
+        for conflict in table.conflicts:
+            print(f"  {conflict}")
