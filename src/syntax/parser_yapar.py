@@ -90,7 +90,8 @@ def parse_yapar(source: str) -> Grammar:
         start_symbol=start_symbol,
         terminals=terminals,
         nonterminals=nonterminals,
-        productions=productions
+        productions=productions,
+        ignored_tokens=ignored_tokens
     )
 
 
@@ -110,7 +111,7 @@ def parse_tokens(declarations: str) -> Set[str]:
 
         elif line.startswith("IGNORE"):
             part = line.split()
-            ignored_tokens.update(parts[1:])
+            ignored_tokens.update(part[1:])
 
     return tokens, ignored_tokens
 
