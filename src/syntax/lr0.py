@@ -8,6 +8,7 @@ from src.syntax.parser_yapar import Grammar, Production
 
 
 EOF_SYMBOL = "$"
+EPSILON_SYMBOL = "ε"
 
 @dataclass(frozen=True)
 class LR0Item:
@@ -15,6 +16,8 @@ class LR0Item:
     dot: int = 0
 
     def symbol_after_dot(self) -> str | None:
+        if self.production.right == (EPSILON_SYMBOL,):
+            return None
         if self.dot < len(self.production.right):
             return self.production.right[self.dot]
         return None
@@ -23,6 +26,8 @@ class LR0Item:
         return LR0Item(self.production, self.dot + 1)
 
     def is_complete(self) -> bool:
+        if self.production.right == (EPSILON_SYMBOL,):
+            return True
         return self.dot >= len(self.production.right)
 
     def __str__(self) -> str:
@@ -155,6 +160,14 @@ def set_action(
     key = (state_id, terminal)
 
     if key in table.action and table.action[key] != value:
+        current = table.action[key]
+        if terminal == "ELSE":
+            if current.startswith("s") and value.startswith("r("):
+                return
+            if current.startswith("r(") and value.startswith("s"):
+                table.action[key] = value
+                return
+
         table.conflicts.append(
             f"Conflicto ACTION[{state_id}, {terminal}]: "
             f"{table.action[key]} vs {value}"
@@ -163,8 +176,88 @@ def set_action(
 
     table.action[key] = value
 
+def first_sets(grammar: Grammar) -> Dict[str, Set[str]]:
+    first: Dict[str, Set[str]] = {}
+
+    for terminal in grammar.terminals:
+        first[terminal] = {terminal}
+
+    first[EOF_SYMBOL] = {EOF_SYMBOL}
+    first[EPSILON_SYMBOL] = {EPSILON_SYMBOL}
+
+    for nonterminal in grammar.nonterminals:
+        first.setdefault(nonterminal, set())
+
+    changed = True
+    while changed:
+        changed = False
+
+        for production in grammar.productions:
+            before = len(first[production.left])
+            first[production.left].update(first_of_sequence(production.right, first))
+            if len(first[production.left]) != before:
+                changed = True
+
+    return first
+
+
+def first_of_sequence(
+    symbols: Tuple[str, ...],
+    first: Dict[str, Set[str]]
+) -> Set[str]:
+    if not symbols or symbols == (EPSILON_SYMBOL,):
+        return {EPSILON_SYMBOL}
+
+    result: Set[str] = set()
+
+    for symbol in symbols:
+        symbol_first = first.get(symbol, {symbol})
+        result.update(symbol_first - {EPSILON_SYMBOL})
+
+        if EPSILON_SYMBOL not in symbol_first:
+            break
+    else:
+        result.add(EPSILON_SYMBOL)
+
+    return result
+
+
+def follow_sets(grammar: Grammar) -> Dict[str, Set[str]]:
+    first = first_sets(grammar)
+    follow: Dict[str, Set[str]] = {
+        nonterminal: set()
+        for nonterminal in grammar.nonterminals
+    }
+    follow[grammar.start_symbol].add(EOF_SYMBOL)
+
+    changed = True
+    while changed:
+        changed = False
+
+        for production in grammar.productions:
+            rhs = production.right
+
+            for index, symbol in enumerate(rhs):
+                if symbol not in grammar.nonterminals:
+                    continue
+
+                beta = rhs[index + 1:]
+                beta_first = first_of_sequence(beta, first)
+
+                before = len(follow[symbol])
+                follow[symbol].update(beta_first - {EPSILON_SYMBOL})
+
+                if EPSILON_SYMBOL in beta_first:
+                    follow[symbol].update(follow[production.left])
+
+                if len(follow[symbol]) != before:
+                    changed = True
+
+    return follow
+
 def build_parsing_table(automaton: LR0Automaton) -> ParsingTable:
     grammar = automaton.grammar
+    follow = follow_sets(grammar)
 
     table = ParsingTable(
         action={},
@@ -195,7 +288,7 @@ def build_parsing_table(automaton: LR0Automaton) -> ParsingTable:
             else:
                 reduce_value = f"r({production.left} -> {' '.join(production.right)})"
 
-                for terminal in terminals:
+                for terminal in follow.get(production.left, terminals):
                     set_action(table, state_id, terminal, reduce_value)
 
     return table
