@@ -106,6 +106,31 @@ def _dfa_tabla_to_records(tabla) -> list:
     return []
 
 
+def _token_from_action(action: str) -> str:
+    """Extrae TOKEN de acciones simples como { return TOKEN }."""
+    token = action.strip()
+    token = token.replace("return", "").replace(";", "").strip()
+    return token.strip("{} ").strip()
+
+
+def _tokens_from_yalex(parsed) -> set[str]:
+    return {
+        token
+        for case in parsed.rule_cases
+        if (token := _token_from_action(case.action_src))
+    }
+
+
+def _validate_yapar_tokens(grammar, yalex_tokens: set[str]) -> list[str]:
+    missing = sorted(grammar.terminals - yalex_tokens)
+    if not missing:
+        return []
+    return [
+        "Tokens declarados en YAPar pero no definidos en YALex: "
+        + ", ".join(missing)
+    ]
+
+
 # ─────────────────────────── SIDEBAR ───────────────────────────
 
 st.sidebar.title("Configuración")
@@ -119,11 +144,14 @@ yalp_src = yalp_file.read().decode("utf-8") if yalp_file else ""
 
 if st.sidebar.button("Generar analizadores"):
     errors = []
+    parsed = None
+    yalex_tokens: set[str] = set()
 
     # ── Lexer ──────────────────────────────────────────────────
     if yal_src:
         try:
             parsed = parse_yalex(yal_src)
+            yalex_tokens = _tokens_from_yalex(parsed)
             nfa    = build_combined_nfa(parsed.rule_cases)
             dfa    = nfa_to_dfa(nfa)
             if minimizar:
@@ -141,6 +169,14 @@ if st.sidebar.button("Generar analizadores"):
     if yalp_src:
         try:
             grammar   = parse_yapar(yalp_src)
+            if parsed is None:
+                raise ValueError("Primero corrige o carga el archivo YALex.")
+
+            token_errors = _validate_yapar_tokens(grammar, yalex_tokens)
+            errors.extend(token_errors)
+            if token_errors:
+                raise ValueError("Corrige los errores anteriores antes de generar el parser.")
+
             automaton = build_lr0_automaton(grammar)
             table     = build_parsing_table(automaton)
 
