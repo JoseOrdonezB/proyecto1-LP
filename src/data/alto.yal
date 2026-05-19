@@ -3,9 +3,11 @@ let letter = ['a'-'z''A'-'Z']
 let id = letter(letter|digit|'_')*
 let ws = [' ''\t''\n']+
 let string = '"' ('\\'['"''n''t''\\'] | [^'"''\n'])* '"'
+let comment = '#' [^'\n']*
 
 rule tokens =
     ws              { return WHITESPACE }
+  | comment         { return COMMENT }
   | "def"           { return DEF }
   | "return"        { return RETURN }
   | "if"            { return IF }
@@ -21,6 +23,8 @@ rule tokens =
   | "!="            { return DIFERENTE }
   | "<="            { return MENOR_IGUAL }
   | ">="            { return MAYOR_IGUAL }
+  | "<"             { return MENOR }
+  | ">"             { return MAYOR }
   | "+"             { return SUMA }
   | "-"             { return RESTA }
   | "*"             { return MULT }

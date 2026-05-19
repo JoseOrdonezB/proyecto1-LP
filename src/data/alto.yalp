@@ -1,0 +1,134 @@
+%token ID NUMBER STRING WHITESPACE COMMENT
+%token DEF RETURN IF ELSE FOR IN WHILE
+%token IGUAL IGUAL_IGUAL DIFERENTE MENOR MENOR_IGUAL MAYOR MAYOR_IGUAL
+%token SUMA RESTA MULT DIV
+%token LPAREN RPAREN DOS_PUNTOS COMA
+
+IGNORE WHITESPACE COMMENT
+
+%%
+
+program:
+    stmt_list
+;
+
+stmt_list:
+    stmt stmt_list_tail
+;
+
+stmt_list_tail:
+    stmt stmt_list_tail
+  |
+;
+
+stmt:
+    assignment
+  | function_def
+  | if_stmt
+  | while_stmt
+  | for_stmt
+  | return_stmt
+  | call_stmt
+;
+
+assignment:
+    ID IGUAL expr
+;
+
+function_def:
+    DEF ID LPAREN params RPAREN DOS_PUNTOS stmt
+;
+
+params:
+    ID params_tail
+  |
+;
+
+params_tail:
+    COMA ID params_tail
+  |
+;
+
+if_stmt:
+    IF condition DOS_PUNTOS stmt ELSE DOS_PUNTOS stmt
+  | IF LPAREN condition RPAREN DOS_PUNTOS stmt ELSE DOS_PUNTOS stmt
+  | IF condition DOS_PUNTOS stmt
+  | IF LPAREN condition RPAREN DOS_PUNTOS stmt
+;
+
+while_stmt:
+    WHILE condition DOS_PUNTOS stmt
+  | WHILE LPAREN condition RPAREN DOS_PUNTOS stmt
+;
+
+for_stmt:
+    FOR ID IN expr DOS_PUNTOS stmt
+;
+
+return_stmt:
+    RETURN expr
+;
+
+call_stmt:
+    call_expr
+;
+
+condition:
+    expr comparator expr
+;
+
+comparator:
+    IGUAL_IGUAL
+  | DIFERENTE
+  | MENOR
+  | MENOR_IGUAL
+  | MAYOR
+  | MAYOR_IGUAL
+;
+
+expr:
+    term expr_tail
+;
+
+expr_tail:
+    op term expr_tail
+  |
+;
+
+term:
+    atom
+  | call_expr
+  | LPAREN expr RPAREN
+;
+
+call_expr:
+    call_name LPAREN args RPAREN
+;
+
+call_name:
+    ID
+  | PRINT
+;
+
+args:
+    expr args_tail
+  |
+;
+
+args_tail:
+    COMA expr args_tail
+  |
+;
+
+op:
+    SUMA
+  | RESTA
+  | MULT
+  | DIV
+;
+
+atom:
+    ID
+  | NUMBER
+  | STRING
+;
