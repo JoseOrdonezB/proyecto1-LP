@@ -249,6 +249,10 @@ class RegexParser:
         if ch == "[":
             return self.parse_charset_expr()
 
+        if ch == ".":
+            self.i += 1
+            return LiteralNode(".")
+
         if ch.isalpha() or ch == "_":
             ident = self.read_identifier()
             if ident not in self.definitions:
@@ -324,6 +328,12 @@ class RegexParser:
     def parse_charset(self) -> CharSetNode:
         self.i += 1
         chars: Set[str] = set()
+        negate = False
+
+        self.i = self.skip_local_ws(self.i)
+        if self.i < len(self.text) and self.text[self.i] == "^":
+            negate = True
+            self.i += 1
 
         while self.i < len(self.text):
             self.i = self.skip_local_ws(self.i)
@@ -332,7 +342,7 @@ class RegexParser:
                 self.i += 1
                 if not chars:
                     raise YALexError("Charset vacío")
-                return CharSetNode(chars)
+                return CharSetNode(ASCII_UNIVERSE - chars if negate else chars)
 
             left_chars = self.read_charset_atom()
             self.i = self.skip_local_ws(self.i)

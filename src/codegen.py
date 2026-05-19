@@ -34,7 +34,7 @@ def generate_lexer_code(dfa):
                 char = self.text[self.pos]
 
                 # --- Manejo de strings ---
-                if char == '"':
+                if char == '"' and self.pos == start:
                     start_str = self.pos
                     self.pos += 1
                     while self.pos < self.length:
