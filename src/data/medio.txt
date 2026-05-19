@@ -1,7 +1,5 @@
-x = 10
-y = 20
+# PRUEBA VALIDA
+if (x == y) print(x + 1)
 
-if x == y
-    print(x)
-else
-    print(y)
+# PRUEBA INVALIDA
+if (x ==) print(x)

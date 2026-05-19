@@ -1,0 +1,71 @@
+%token ID NUMBER WHITESPACE COMMENT
+%token IF ELSE WHILE PRINT
+%token IGUAL IGUAL_IGUAL DIFERENTE
+%token SUMA RESTA MULT DIV
+%token LPAREN RPAREN
+
+IGNORE WHITESPACE COMMENT
+
+%%
+
+program:
+    stmt
+;
+
+stmt:
+    assignment
+  | print_stmt
+  | if_stmt
+  | while_stmt
+;
+
+assignment:
+    ID IGUAL expr
+;
+
+print_stmt:
+    PRINT LPAREN expr RPAREN
+;
+
+if_stmt:
+    IF condition print_stmt
+  | IF LPAREN condition RPAREN print_stmt
+  | IF condition print_stmt ELSE print_stmt
+  | IF LPAREN condition RPAREN print_stmt ELSE print_stmt
+;
+
+while_stmt:
+    WHILE condition assignment
+  | WHILE LPAREN condition RPAREN assignment
+;
+
+condition:
+    expr comparator expr
+;
+
+comparator:
+    IGUAL_IGUAL
+  | DIFERENTE
+;
+
+expr:
+    term expr_tail
+;
+
+expr_tail:
+    op term expr_tail
+  |
+;
+
+term:
+    ID
+  | NUMBER
+  | LPAREN expr RPAREN
+;
+
+op:
+    SUMA
+  | RESTA
+  | MULT
+  | DIV
+;

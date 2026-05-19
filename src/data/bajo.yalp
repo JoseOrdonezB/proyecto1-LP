@@ -1,0 +1,28 @@
+%token ID NUMBER IGUAL SUMA RESTA WHITESPACE COMMENT
+
+IGNORE WHITESPACE COMMENT
+
+%%
+
+stmt:
+    ID IGUAL expr
+;
+
+expr:
+    atom expr_tail
+;
+
+expr_tail:
+    op atom expr_tail
+  |
+;
+
+op:
+    SUMA
+  | RESTA
+;
+
+atom:
+    ID
+  | NUMBER
+;
